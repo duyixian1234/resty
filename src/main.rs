@@ -3,6 +3,7 @@
 mod app_state;
 mod response;
 mod text_input;
+mod text_area;
 mod theme;
 mod workspace;
 

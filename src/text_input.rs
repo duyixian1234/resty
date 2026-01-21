@@ -16,6 +16,7 @@ pub struct TextInput {
 
 pub enum TextInputEvent {
     EnterPressed,
+    TextChanged(String),
 }
 
 impl EventEmitter<TextInputEvent> for TextInput {}
@@ -80,8 +81,8 @@ impl TextInput {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
-        self.selection_reversed = false;
-        cx.notify();
+        self.selection_reversed = false;        let content = self.content.clone();
+        cx.emit(TextInputEvent::TextChanged(content));        cx.notify();
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -321,6 +322,8 @@ impl EntityInputHandler for TextInput {
             self.selected_range = mark_end..mark_end;
         }
         self.selection_reversed = false;
+        let content = self.content.clone();
+        cx.emit(TextInputEvent::TextChanged(content));
         cx.notify();
     }
 

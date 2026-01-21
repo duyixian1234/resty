@@ -10,6 +10,9 @@ pub struct AppState {
     pub method: SharedString,
     pub history: Vec<SharedString>,
     pub response: Option<Response>,
+    pub body: SharedString,
+    pub headers: Vec<(SharedString, SharedString)>,
+    pub queries: Vec<(SharedString, SharedString)>,
     client: reqwest::Client,
 }
 
@@ -20,6 +23,9 @@ impl AppState {
             method: "GET".into(),
             history: vec![],
             response: None,
+            body: "".into(),
+            headers: vec![],
+            queries: vec![],
             client: reqwest::Client::builder()
                 .user_agent("gpui-app")
                 .build()
@@ -30,6 +36,10 @@ impl AppState {
     pub fn send_request(&mut self, cx: &mut Context<Self>) {
         self.response = None;
         let url = self.url.clone();
+        let method = self.method.clone();
+        let body = self.body.clone();
+        let headers = self.headers.clone();
+        let queries = self.queries.clone();
         let client = self.client.clone();
 
         let handle = RUNTIME
@@ -44,7 +54,36 @@ impl AppState {
                 let _guard = handle.enter();
                 let start = Instant::now();
 
-                let response = match client.get(url.as_ref()).send().await {
+                let http_method = match method.as_ref() {
+                    "POST" => reqwest::Method::POST,
+                    "PUT" => reqwest::Method::PUT,
+                    "DELETE" => reqwest::Method::DELETE,
+                    "PATCH" => reqwest::Method::PATCH,
+                    _ => reqwest::Method::GET,
+                };
+
+                let mut url = reqwest::Url::parse(url.as_ref()).map_err(|e| Response::from_error(format!("Invalid URL: {}", e))).unwrap();
+                if !queries.is_empty() {
+                    let mut query_pairs = url.query_pairs_mut();
+                    for (k, v) in queries {
+                        query_pairs.append_pair(k.as_ref(), v.as_ref());
+                    }
+                }
+                drop(url.query_pairs_mut()); // Drop the mutable borrow
+
+                let mut rb = client.request(http_method, url);
+
+                // Add headers
+                for (k, v) in headers {
+                    rb = rb.header(k.as_ref(), v.as_ref());
+                }
+
+                // Add body for non-GET requests
+                if method != "GET" && !body.is_empty() {
+                    rb = rb.body(body.to_string());
+                }
+
+                let response = match rb.send().await {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
                         let status_text: SharedString =
@@ -110,6 +149,26 @@ impl AppState {
 
     pub fn update_url(&mut self, url: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.url = url.into();
+        cx.notify();
+    }
+
+    pub fn update_method(&mut self, method: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.method = method.into();
+        cx.notify();
+    }
+
+    pub fn update_body(&mut self, body: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.body = body.into();
+        cx.notify();
+    }
+
+    pub fn update_headers(&mut self, headers: Vec<(SharedString, SharedString)>, cx: &mut Context<Self>) {
+        self.headers = headers;
+        cx.notify();
+    }
+
+    pub fn update_queries(&mut self, queries: Vec<(SharedString, SharedString)>, cx: &mut Context<Self>) {
+        self.queries = queries;
         cx.notify();
     }
 }

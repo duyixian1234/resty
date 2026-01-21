@@ -1,6 +1,7 @@
 use crate::app_state::AppState;
 use crate::response::{Response, ResponseContent};
 use crate::text_input::{TextInput, TextInputEvent};
+use crate::text_area::{TextArea, TextAreaEvent};
 use crate::theme::Theme;
 use gpui::*;
 use std::sync::Arc;
@@ -11,16 +12,31 @@ enum ResponseTab {
     Headers,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestTab {
+    Params,
+    Headers,
+    Body,
+}
+
 pub struct Workspace {
     state: Entity<AppState>,
     url_input: Entity<TextInput>,
     theme: Theme,
-    active_tab: ResponseTab,
+    active_response_tab: ResponseTab,
+    active_request_tab: RequestTab,
+    
+    // Request inputs
+    body_input: Entity<TextArea>,
+    header_inputs: Vec<(Entity<TextInput>, Entity<TextInput>)>,
+    query_inputs: Vec<(Entity<TextInput>, Entity<TextInput>)>,
 }
 
 impl Workspace {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
-        let url = state.read(cx).url.clone();
+        let app_state = state.read(cx);
+        let url = app_state.url.clone();
+        
         let url_input = cx.new(|cx| {
             let mut input = TextInput::new(cx, "Enter URL...");
             input.set_text(url.to_string(), cx);
@@ -31,15 +47,84 @@ impl Workspace {
             TextInputEvent::EnterPressed => {
                 view.send_request(cx);
             }
+            _ => {}
         })
         .detach();
 
-        Self {
+        let body_input = cx.new(|cx| {
+            TextArea::new(cx, "Request Body...")
+        });
+
+        cx.subscribe(&body_input, |view, _input, event, cx| match event {
+            TextAreaEvent::TextChanged(text) => {
+                view.state.update(cx, |state, cx| {
+                    state.update_body(text, cx);
+                });
+            }
+        }).detach();
+
+        let mut workspace = Self {
             state,
             url_input,
             theme: Theme::dark(),
-            active_tab: ResponseTab::Body,
-        }
+            active_response_tab: ResponseTab::Body,
+            active_request_tab: RequestTab::Params,
+            body_input,
+            header_inputs: vec![],
+            query_inputs: vec![],
+        };
+
+        // Add initial empty rows
+        workspace.add_header_row(cx);
+        workspace.add_query_row(cx);
+
+        workspace
+    }
+
+    fn add_header_row(&mut self, cx: &mut Context<Self>) {
+        let key_input = cx.new(|cx| TextInput::new(cx, "Key"));
+        let val_input = cx.new(|cx| TextInput::new(cx, "Value"));
+        
+        self.header_inputs.push((key_input.clone(), val_input.clone()));
+        
+        cx.subscribe(&key_input, |view, _, _, cx| view.sync_headers(cx)).detach();
+        cx.subscribe(&val_input, |view, _, _, cx| view.sync_headers(cx)).detach();
+        
+        cx.notify();
+    }
+
+    fn add_query_row(&mut self, cx: &mut Context<Self>) {
+        let key_input = cx.new(|cx| TextInput::new(cx, "Key"));
+        let val_input = cx.new(|cx| TextInput::new(cx, "Value"));
+        
+        self.query_inputs.push((key_input.clone(), val_input.clone()));
+        
+        cx.subscribe(&key_input, |view, _, _, cx| view.sync_queries(cx)).detach();
+        cx.subscribe(&val_input, |view, _, _, cx| view.sync_queries(cx)).detach();
+        
+        cx.notify();
+    }
+
+    fn sync_headers(&mut self, cx: &mut Context<Self>) {
+        let headers: Vec<(SharedString, SharedString)> = self.header_inputs.iter()
+            .map(|(k, v)| (k.read(cx).text(), v.read(cx).text()))
+            .filter(|(k, _)| !k.is_empty())
+            .collect();
+        
+        self.state.update(cx, |state, cx| {
+            state.update_headers(headers, cx);
+        });
+    }
+
+    fn sync_queries(&mut self, cx: &mut Context<Self>) {
+        let queries: Vec<(SharedString, SharedString)> = self.query_inputs.iter()
+            .map(|(k, v)| (k.read(cx).text(), v.read(cx).text()))
+            .filter(|(k, _)| !k.is_empty())
+            .collect();
+        
+        self.state.update(cx, |state, cx| {
+            state.update_queries(queries, cx);
+        });
     }
 
     fn send_request(&mut self, cx: &mut Context<Self>) {
@@ -94,12 +179,26 @@ impl Workspace {
             .border_color(self.theme.border)
             .child(
                 div()
+                    .id("method-selector")
                     .px_3()
                     .py_1()
                     .bg(self.theme.input_bg)
                     .border_1()
                     .border_color(self.theme.input_border)
                     .text_sm()
+                    .cursor_pointer()
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.state.update(cx, |state, cx| {
+                            let next_method = match state.method.as_ref() {
+                                "GET" => "POST",
+                                "POST" => "PUT",
+                                "PUT" => "DELETE",
+                                "DELETE" => "PATCH",
+                                _ => "GET",
+                            };
+                            state.update_method(next_method, cx);
+                        });
+                    }))
                     .child(method),
             )
             .child(self.url_input.clone())
@@ -116,6 +215,99 @@ impl Workspace {
                         view.send_request(cx);
                     }))
                     .child("Send"),
+            )
+    }
+
+    fn render_request_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex_col()
+            .border_b_1()
+            .border_color(self.theme.border)
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
+                    .px_4()
+                    .pt_2()
+                    .child(self.render_request_tab("Params", RequestTab::Params, cx))
+                    .child(self.render_request_tab("Headers", RequestTab::Headers, cx))
+                    .child(self.render_request_tab("Body", RequestTab::Body, cx))
+            )
+            .child(
+                div()
+                    .id("request-content")
+                    .p_4()
+                    .h_48()
+                    .overflow_y_scroll()
+                    .child(match self.active_request_tab {
+                        RequestTab::Params => self.render_key_value_editor(&self.query_inputs, "query", cx).into_any_element(),
+                        RequestTab::Headers => self.render_key_value_editor(&self.header_inputs, "header", cx).into_any_element(),
+                        RequestTab::Body => self.body_input.clone().into_any_element(),
+                    })
+            )
+    }
+
+    fn render_request_tab(&self, label: &'static str, tab: RequestTab, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.active_request_tab == tab;
+        div()
+            .id(label)
+            .text_xs()
+            .cursor_pointer()
+            .text_color(if active { self.theme.text } else { self.theme.text_dim })
+            .border_b_2()
+            .border_color(if active { self.theme.accent } else { gpui::transparent_black() })
+            .on_click(cx.listener(move |view, _, _, cx| {
+                view.active_request_tab = tab;
+                cx.notify();
+            }))
+            .child(label)
+    }
+
+    fn render_key_value_editor(&self, rows: &[(Entity<TextInput>, Entity<TextInput>)], prefix: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex_col()
+            .gap_2()
+            .children(rows.iter().enumerate().map(|(i, (k, v))| {
+                div()
+                    .id((prefix, i))
+                    .flex()
+                    .gap_2()
+                    .child(div().flex_1().child(k.clone()))
+                    .child(div().flex_1().child(v.clone()))
+                    .child(
+                        div()
+                            .id(("remove-row", i))
+                            .px_2()
+                            .text_color(self.theme.text_dim)
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                if prefix == "query" {
+                                    view.query_inputs.remove(i);
+                                    view.sync_queries(cx);
+                                } else {
+                                    view.header_inputs.remove(i);
+                                    view.sync_headers(cx);
+                                }
+                                cx.notify();
+                            }))
+                            .child("✕")
+                    )
+            }))
+            .child(
+                div()
+                    .id(("add-row", 999usize))
+                    .mt_2()
+                    .text_xs()
+                    .text_color(self.theme.accent)
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        if prefix == "query" {
+                            view.add_query_row(cx);
+                        } else {
+                            view.add_header_row(cx);
+                        }
+                    }))
+                    .child("+ Add Row"),
             )
     }
 
@@ -143,7 +335,7 @@ impl Workspace {
                 )
                 .into_any_element(),
             Some(response) => {
-                let active_tab = self.active_tab;
+                let active_tab = self.active_response_tab;
                 div()
                     .flex_1()
                     .flex_col()
@@ -178,7 +370,7 @@ impl Workspace {
         tab: ResponseTab,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let active = self.active_tab == tab;
+        let active = self.active_response_tab == tab;
         div()
             .id(label)
             .px_3()
@@ -205,7 +397,7 @@ impl Workspace {
                 self.theme.text_dim
             })
             .on_click(cx.listener(move |view, _, _, cx| {
-                view.active_tab = tab;
+                view.active_response_tab = tab;
                 cx.notify();
             }))
             .child(label)
@@ -437,6 +629,7 @@ impl Render for Workspace {
                     .flex_1()
                     .flex_col()
                     .child(self.render_url_bar(cx))
+                    .child(self.render_request_section(cx))
                     .child(self.render_response_section(cx)),
             )
     }
