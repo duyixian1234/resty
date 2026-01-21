@@ -10,6 +10,9 @@
 - 修复了 `reqwest` 调用时因缺少 Tokio 运行时导致的崩溃问题（通过集成全局 Tokio Runtime 手柄）。
 - 实现完善了请求发送逻辑，现在支持真正的 HTTP GET 请求并展示响应。
 
+### Fixed
+- 修复了 Windows Release 版本启动时会弹出终端窗口的问题（通过添加 `#![windows_subsystem = "windows"]`）。
+
 ### Refactored
 - **架构升级与性能优化**：
     - 引入 `SharedString` 替换 `String` 作为 UI 层的数据传输格式，大幅减少渲染过程中的内存分配。

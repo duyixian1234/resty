@@ -18,5 +18,6 @@
     - [x] 持久化 reqwest::Client 复用连接池
     - [x] 全面引入 SharedString 减少内存克隆
     - [x] 优化 main 函数错误处理与运行时初始化
+- [x] 11. 解决 Windows Release 启动弹出终端窗口的问题
 - [ ] 5. 数据持久化 (SQLite 或 JSON)
 - [ ] 6. 极致 UI 优化 (Lucide 图标, 动画)
