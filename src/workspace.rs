@@ -3,11 +3,19 @@ use crate::response::{Response, ResponseContent};
 use crate::text_input::{TextInput, TextInputEvent};
 use crate::theme::Theme;
 use gpui::*;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResponseTab {
+    Body,
+    Headers,
+}
 
 pub struct Workspace {
     state: Entity<AppState>,
     url_input: Entity<TextInput>,
     theme: Theme,
+    active_tab: ResponseTab,
 }
 
 impl Workspace {
@@ -30,6 +38,7 @@ impl Workspace {
             state,
             url_input,
             theme: Theme::dark(),
+            active_tab: ResponseTab::Body,
         }
     }
 
@@ -112,27 +121,130 @@ impl Workspace {
 
     fn render_response_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let response = state.response.clone();
 
-        match &state.response {
-            None => div().flex_1().flex_col().p_4().child(
-                div()
-                    .flex_1()
-                    .bg(self.theme.bg)
-                    .border_1()
-                    .border_color(self.theme.border)
-                    .p_4()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(self.theme.text_dim)
-                    .child("No response yet. Send a request to see the response."),
-            ),
-            Some(response) => div()
+        match response {
+            None => div()
                 .flex_1()
                 .flex_col()
-                .child(self.render_response_header(response))
-                .child(self.render_response_body(response)),
+                .p_4()
+                .child(
+                    div()
+                        .flex_1()
+                        .bg(self.theme.bg)
+                        .border_1()
+                        .border_color(self.theme.border)
+                        .p_4()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_color(self.theme.text_dim)
+                        .child("No response yet. Send a request to see the response."),
+                )
+                .into_any_element(),
+            Some(response) => {
+                let active_tab = self.active_tab;
+                div()
+                    .flex_1()
+                    .flex_col()
+                    .child(self.render_response_header(&response))
+                    .child(self.render_response_tabs(cx))
+                    .child(match active_tab {
+                        ResponseTab::Body => {
+                            self.render_response_body(&response).into_any_element()
+                        }
+                        ResponseTab::Headers => self.render_headers(&response).into_any_element(),
+                    })
+                    .into_any_element()
+            }
         }
+    }
+
+    fn render_response_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .gap_2()
+            .px_4()
+            .pt_2()
+            .border_b_1()
+            .border_color(self.theme.border)
+            .child(self.render_tab("Body", ResponseTab::Body, cx))
+            .child(self.render_tab("Headers", ResponseTab::Headers, cx))
+    }
+
+    fn render_tab(
+        &self,
+        label: &'static str,
+        tab: ResponseTab,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let active = self.active_tab == tab;
+        div()
+            .id(label)
+            .px_3()
+            .py_1()
+            .text_xs()
+            .cursor_pointer()
+            .border_t_1()
+            .border_l_1()
+            .border_r_1()
+            .rounded_t_sm()
+            .border_color(if active {
+                self.theme.border
+            } else {
+                gpui::transparent_black()
+            })
+            .bg(if active {
+                self.theme.bg
+            } else {
+                gpui::transparent_black()
+            })
+            .text_color(if active {
+                self.theme.text
+            } else {
+                self.theme.text_dim
+            })
+            .on_click(cx.listener(move |view, _, _, cx| {
+                view.active_tab = tab;
+                cx.notify();
+            }))
+            .child(label)
+    }
+
+    fn render_headers(&self, response: &Response) -> impl IntoElement {
+        div()
+            .id("response-headers")
+            .flex_1()
+            .p_4()
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .flex_col()
+                    .gap_1()
+                    .children(response.headers.iter().map(|(k, v)| {
+                        div()
+                            .flex()
+                            .gap_4()
+                            .py_1()
+                            .border_b_1()
+                            .border_color(rgb(0x2a2a2a))
+                            .child(
+                                div()
+                                    .w_48()
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(self.theme.text_dim)
+                                    .child(k.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_xs()
+                                    .text_color(self.theme.text)
+                                    .child(v.clone()),
+                            )
+                    })),
+            )
     }
 
     fn render_response_header(&self, response: &Response) -> impl IntoElement {
@@ -194,20 +306,22 @@ impl Workspace {
 
     fn render_response_body(&self, response: &Response) -> impl IntoElement {
         let content = match &response.content {
-            ResponseContent::Json(json) => self.render_json_response(json),
-            ResponseContent::Text(text) => self.render_text_response(text),
-            ResponseContent::Image(bytes, mime_type) => {
-                self.render_image_response(bytes, mime_type)
-            }
-            ResponseContent::Binary(bytes) => self.render_binary_response(bytes),
-            ResponseContent::Error(error) => self.render_error_response(error),
+            ResponseContent::Json(json) => self.render_json_response(json).into_any_element(),
+            ResponseContent::Text(text) => self.render_text_response(text).into_any_element(),
+            ResponseContent::Image(bytes, mime_type) => self
+                .render_image_response(bytes, mime_type)
+                .into_any_element(),
+            ResponseContent::Binary(bytes) => self.render_binary_response(bytes).into_any_element(),
+            ResponseContent::Error(error) => self.render_error_response(error).into_any_element(),
         };
 
-        div().flex_1().p_4().overflow_hidden().child(content)
+        div().flex_1().p_4().child(content)
     }
 
-    fn render_json_response(&self, json: &SharedString) -> Div {
+    fn render_json_response(&self, json: &SharedString) -> impl IntoElement {
         div()
+            .id("json-response")
+            .size_full()
             .bg(self.theme.input_bg)
             .border_1()
             .border_color(self.theme.border)
@@ -215,11 +329,14 @@ impl Workspace {
             .font_family("monospace")
             .text_sm()
             .text_color(self.theme.text)
+            .overflow_y_scroll()
             .child(json.clone())
     }
 
-    fn render_text_response(&self, text: &SharedString) -> Div {
+    fn render_text_response(&self, text: &SharedString) -> impl IntoElement {
         div()
+            .id("text-response")
+            .size_full()
             .bg(self.theme.input_bg)
             .border_1()
             .border_color(self.theme.border)
@@ -227,11 +344,15 @@ impl Workspace {
             .font_family("monospace")
             .text_sm()
             .text_color(self.theme.text)
+            .overflow_y_scroll()
             .child(text.clone())
     }
 
-    fn render_image_response(&self, bytes: &[u8], mime_type: &SharedString) -> Div {
+    fn render_image_response(&self, bytes: &[u8], mime_type: &SharedString) -> impl IntoElement {
+        let format = ImageFormat::from_mime_type(mime_type);
+
         div()
+            .size_full()
             .bg(self.theme.input_bg)
             .border_1()
             .border_color(self.theme.border)
@@ -244,15 +365,30 @@ impl Workspace {
                     .text_color(self.theme.text_dim)
                     .child(format!("Image ({}): {} bytes", mime_type, bytes.len())),
             )
-            .child(
-                div().text_xs().text_color(self.theme.text_dim).child(
-                    "Image rendering not yet implemented. Image data received successfully.",
-                ),
-            )
+            .child({
+                if let Some(format) = format {
+                    let image = Image::from_bytes(format, bytes.to_vec());
+                    div()
+                        .flex_1()
+                        .child(
+                            img(Arc::new(image))
+                                .size_full()
+                                .object_fit(ObjectFit::Contain),
+                        )
+                        .into_any_element()
+                } else {
+                    div()
+                        .text_xs()
+                        .text_color(self.theme.text_dim)
+                        .child(format!("Unsupported image format: {}", mime_type))
+                        .into_any_element()
+                }
+            })
     }
 
-    fn render_binary_response(&self, bytes: &[u8]) -> Div {
+    fn render_binary_response(&self, bytes: &[u8]) -> impl IntoElement {
         div()
+            .size_full()
             .bg(self.theme.input_bg)
             .border_1()
             .border_color(self.theme.border)
@@ -273,14 +409,17 @@ impl Workspace {
             )
     }
 
-    fn render_error_response(&self, error: &SharedString) -> Div {
+    fn render_error_response(&self, error: &SharedString) -> impl IntoElement {
         div()
+            .id("error-response")
+            .size_full()
             .bg(rgb(0x3f1a1a))
             .border_1()
             .border_color(rgb(0xef4444))
             .p_3()
             .text_sm()
             .text_color(rgb(0xfca5a5))
+            .overflow_y_scroll()
             .child(error.clone())
     }
 }
