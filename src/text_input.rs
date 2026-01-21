@@ -5,7 +5,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct TextInput {
     focus_handle: FocusHandle,
     content: String,
-    placeholder: String,
+    placeholder: SharedString,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -21,11 +21,11 @@ pub enum TextInputEvent {
 impl EventEmitter<TextInputEvent> for TextInput {}
 
 impl TextInput {
-    pub fn new(cx: &mut Context<Self>, placeholder: String) -> Self {
+    pub fn new(cx: &mut Context<Self>, placeholder: impl Into<SharedString>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             content: String::new(),
-            placeholder,
+            placeholder: placeholder.into(),
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -35,15 +35,16 @@ impl TextInput {
         }
     }
 
-    pub fn set_text(&mut self, text: String, cx: &mut Context<Self>) {
+    pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
+        let text = text.into();
         let len = text.len();
         self.content = text;
         self.selected_range = len..len;
         cx.notify();
     }
 
-    pub fn text(&self) -> String {
-        self.content.clone()
+    pub fn text(&self) -> SharedString {
+        self.content.clone().into()
     }
 
     fn cursor_offset(&self) -> usize {
@@ -455,10 +456,10 @@ impl Element for TextInputElement {
 
         let content = input.read(cx).content.clone();
         let placeholder = input.read(cx).placeholder.clone();
-        let display_text = if content.is_empty() && !is_focused {
+        let display_text: SharedString = if content.is_empty() && !is_focused {
             placeholder
         } else {
-            content
+            content.into()
         };
 
         let run = text_style.to_run(display_text.len());

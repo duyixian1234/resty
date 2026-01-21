@@ -13,8 +13,8 @@ impl Workspace {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let url = state.read(cx).url.clone();
         let url_input = cx.new(|cx| {
-            let mut input = TextInput::new(cx, "Enter URL...".into());
-            input.set_text(url, cx);
+            let mut input = TextInput::new(cx, "Enter URL...");
+            input.set_text(url.to_string(), cx);
             input
         });
 
@@ -60,7 +60,7 @@ impl Workspace {
             .child(
                 div()
                     .flex_col()
-                    .children(state.history.iter().rev().take(10).map(|h: &String| {
+                    .children(state.history.iter().rev().take(10).map(|h| {
                         div()
                             .p_2()
                             .text_xs()
