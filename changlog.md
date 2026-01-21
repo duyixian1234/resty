@@ -9,6 +9,15 @@
 - 实现基础点击事件，支持模拟发送请求。
 - 修复了 `reqwest` 调用时因缺少 Tokio 运行时导致的崩溃问题（通过集成全局 Tokio Runtime 手柄）。
 - 实现完善了请求发送逻辑，现在支持真正的 HTTP GET 请求并展示响应。
+- **多种响应类型渲染支持**：
+    - 新增 `response.rs` 模块，实现了 `Response` 和 `ResponseContent` 类型系统。
+    - 支持自动检测和渲染 JSON、Text、Image、Binary 等多种响应类型。
+    - 基于 HTTP `Content-Type` 头自动识别响应格式。
+    - JSON 响应自动格式化美化显示。
+    - 图片响应显示元数据（当前为占位符，图片数据已成功接收）。
+    - 二进制响应显示大小信息和提示。
+    - 响应头部状态栏显示：状态码、耗时、数据大小、内容类型。
+    - 不同状态码使用不同颜色标识（2xx 绿色、4xx/5xx 红色、其他黄色）。
 
 ### Fixed
 - 修复了 Windows Release 版本启动时会弹出终端窗口的问题（通过添加 `#![windows_subsystem = "windows"]`）。
@@ -28,3 +37,4 @@
 - 修正了 `main.rs` 中 `Application::run` 返回值的错误处理逻辑。
 - 修复了 URL 输入框无法由键盘编辑的问题。
 - 引入了 `TextInput` 组件，采用类似 Zed 项目的 `Focusable` 和 `key_char` 处理逻辑，提高了输入的可扩展性和稳定性。
+

@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app_state;
+mod response;
 mod text_input;
 mod theme;
 mod workspace;
@@ -16,7 +17,9 @@ fn main() -> Result<()> {
         .enable_all()
         .build()?;
 
-    RUNTIME.set(runtime).map_err(|_| anyhow::anyhow!("Failed to set runtime"))?;
+    RUNTIME
+        .set(runtime)
+        .map_err(|_| anyhow::anyhow!("Failed to set runtime"))?;
 
     Application::new().run(|cx: &mut App| {
         let state = cx.new(|_| AppState::new());
@@ -31,7 +34,8 @@ fn main() -> Result<()> {
                 ..Default::default()
             },
             |_, cx| cx.new(|cx| Workspace::new(state, cx)),
-        ).expect("Failed to open window");
+        )
+        .expect("Failed to open window");
     });
 
     Ok(())

@@ -19,5 +19,13 @@
     - [x] 全面引入 SharedString 减少内存克隆
     - [x] 优化 main 函数错误处理与运行时初始化
 - [x] 11. 解决 Windows Release 启动弹出终端窗口的问题
+- [x] 12. 支持多种响应类型渲染 (JSON, 图片, Text, Binary)
+    - [x] 实现 Response 模型支持不同内容类型
+    - [x] 基于 Content-Type 自动检测响应类型
+    - [x] JSON 格式化显示
+    - [x] 文本内容显示
+    - [x] 图片内容占位符 (数据已接收)
+    - [x] 二进制内容提示
+    - [x] 响应状态栏显示 (状态码、耗时、大小、类型)
 - [ ] 5. 数据持久化 (SQLite 或 JSON)
 - [ ] 6. 极致 UI 优化 (Lucide 图标, 动画)
